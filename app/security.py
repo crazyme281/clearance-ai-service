@@ -10,8 +10,10 @@ from app.db import get_anon_client, get_service_client
 class CurrentUser:
     profile_id: str          # uuid, from auth.users / profiles
     role: str
+    status: str
     first_name: str
     student_id: Optional[int]  # student_profiles.id, if role == 'student'
+    department_id: Optional[int]  # staff_profiles.department_id, if role is staff (None = institution-wide scope)
     institution_id: Optional[int]
 
 
@@ -43,7 +45,7 @@ async def get_current_user(authorization: str = Header(None)) -> CurrentUser:
     svc = get_service_client()
     profile_res = (
         svc.table("profiles")
-        .select("id, role, first_name, institution_id")
+        .select("id, role, status, first_name, institution_id")
         .eq("id", user.id)
         .single()
         .execute()
@@ -53,6 +55,7 @@ async def get_current_user(authorization: str = Header(None)) -> CurrentUser:
 
     profile = profile_res.data
     student_id = None
+    department_id = None
     if profile["role"] == "student":
         sp_res = (
             svc.table("student_profiles")
@@ -63,11 +66,23 @@ async def get_current_user(authorization: str = Header(None)) -> CurrentUser:
         )
         if sp_res.data:
             student_id = sp_res.data["id"]
+    else:
+        st_res = (
+            svc.table("staff_profiles")
+            .select("department_id")
+            .eq("profile_id", user.id)
+            .maybe_single()
+            .execute()
+        )
+        if st_res.data:
+            department_id = st_res.data.get("department_id")
 
     return CurrentUser(
         profile_id=profile["id"],
         role=profile["role"],
+        status=profile["status"],
         first_name=profile["first_name"],
         student_id=student_id,
+        department_id=department_id,
         institution_id=profile.get("institution_id"),
     )
